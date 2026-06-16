@@ -132,7 +132,13 @@ async def _synthesize(body: TtsBody) -> bytes:
         ) from e
     except RuntimeError as e:
         raise HTTPException(502, str(e)) from e
-    return pcm_to_wav(pcm)
+    wav = pcm_to_wav(pcm)
+    if len(wav) < 1024:
+        raise HTTPException(
+            502,
+            "合成结果为空或过短（Genie 可能 OOM 或长文本未产出音频，可缩短文本或开启 split_sentence）",
+        )
+    return wav
 
 
 @app.get("/health")

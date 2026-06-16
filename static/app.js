@@ -311,6 +311,11 @@
         throw new Error(res.status + " " + err.slice(0, 280));
       }
       lastBlob = await res.blob();
+      if (lastBlob.size < 1024) {
+        throw new Error(
+          "返回音频过小 (" + lastBlob.size + " bytes)，可能合成失败或 Genie 内存不足"
+        );
+      }
       lastObjectUrl = URL.createObjectURL(lastBlob);
       const player = $("#player");
       player.src = lastObjectUrl;
