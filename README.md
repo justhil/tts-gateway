@@ -11,7 +11,7 @@
 - **`DATA_DIR/character_mappings.json`**（可选 `{}`）：对外 ID → 文件夹名。
 - 变更后：`POST /v1/index/refresh` 或依赖 mtime 自动重建。
 
-详细 curl 见 **[docs/EXAMPLES.md](docs/EXAMPLES.md)**（仅用占位符）。
+下游接入（Hermes 等）见 **[docs/INTEGRATION.md](docs/INTEGRATION.md)**；curl 占位符示例见 **[docs/EXAMPLES.md](docs/EXAMPLES.md)**。
 
 ## API
 
