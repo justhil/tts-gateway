@@ -1,0 +1,25 @@
+services:
+  genie-tts-gateway:
+    build: .
+    image: genie-tts-gateway:local
+    container_name: genie-tts-gateway
+    restart: unless-stopped
+    ports:
+      - "8088:8080"
+    environment:
+      GENIE_HOST: ${GENIE_HOST:-http://172.17.0.1:8429}
+      CHARACTERS_ROOT: /www/genie/characters
+      REFS_ROOT: /www/genie/refs
+      DATA_DIR: /data
+      API_KEY: ${API_KEY:-}
+    volumes:
+      - ${GENIE_ROOT:-/www/genie}/characters:/www/genie/characters:ro
+      - ${GENIE_ROOT:-/www/genie}/refs:/www/genie/refs:ro
+      - ./data:/data:ro
+    networks:
+      - default
+
+networks:
+  default:
+    name: docker_default
+    external: true

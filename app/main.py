@@ -1,0 +1,203 @@
+import os
+from pathlib import Path
+
+from fastapi import Depends, FastAPI, HTTPException, Query, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, Response
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel, Field
+
+from app.catalog import list_characters, list_references, resolve_character
+from app.config import Settings, get_settings
+from app.genie_client import GenieClient, pcm_to_wav
+
+STATIC = Path(__file__).resolve().parent.parent / "static"
+
+app = FastAPI(title="Genie TTS Gateway", version="0.1.0")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+def verify_api_key(request: Request, settings: Settings = Depends(get_settings)) -> None:
+    if not settings.api_key:
+        return
+    key = request.headers.get("X-API-Key") or request.headers.get("X-TTS-API-Key")
+    if key != settings.api_key:
+        raise HTTPException(401, "Invalid API key")
+
+
+class TtsBody(BaseModel):
+    text: str = Field(..., min_length=1, max_length=2000)
+    character_id: str = Field(..., description="角色 ID，如 墨白")
+    ref_path: str | None = Field(None, description="参考 wav 绝对路径")
+    ref_id: str | None = Field(None, description="refs 目录下文件名")
+    emotion: str | None = Field(None, description="按情绪选 ref")
+    prompt_text: str | None = None
+    language: str = "zh"
+    split_sentence: bool = True
+
+
+def _pick_ref(character_id: str, body: TtsBody) -> tuple[str, str]:
+    refs = list_references(character_id)
+    if not refs:
+        raise HTTPException(404, f"角色 {character_id} 无参考音频")
+    if body.ref_path:
+        path = body.ref_path
+        if not os.path.isfile(path):
+            raise HTTPException(400, "ref_path 不存在")
+        pt = body.prompt_text or ""
+        for r in refs:
+            if r["path"] == path:
+                pt = pt or r["prompt_text"]
+                break
+        return path, pt or Path(path).stem
+    if body.ref_id:
+        for r in refs:
+            if r["id"] == body.ref_id:
+                return r["path"], body.prompt_text or r["prompt_text"]
+        raise HTTPException(400, "ref_id 无效")
+    em = (body.emotion or "default").lower()
+    for r in refs:
+        if r["emotion"] == em:
+            return r["path"], body.prompt_text or r["prompt_text"]
+    for r in refs:
+        if r["emotion"] == "default":
+            return r["path"], body.prompt_text or r["prompt_text"]
+    return refs[0]["path"], body.prompt_text or refs[0]["prompt_text"]
+
+
+async def _synthesize(body: TtsBody) -> bytes:
+    info = resolve_character(body.character_id)
+    if not info:
+        raise HTTPException(404, f"未找到角色 {body.character_id}")
+    folder = info["folder"]
+    ref_path, prompt_text = _pick_ref(folder, body)
+    if not os.path.isfile(ref_path):
+        raise HTTPException(400, f"参考音频不可读: {ref_path}")
+    client = GenieClient(timeout=get_settings().tts_timeout_sec)
+    await client.ensure_character(
+        info["genie_character"], info["onnx_model_dir"], info["language"]
+    )
+    await client.set_reference(
+        info["genie_character"], ref_path, prompt_text, body.language
+    )
+    pcm = await client.tts_pcm(info["genie_character"], body.text, body.split_sentence)
+    return pcm_to_wav(pcm)
+
+
+@app.get("/health")
+@app.get("/ping")
+async def health():
+    return {"ok": True, "service": "genie-tts-gateway"}
+
+
+@app.get("/v1/index")
+async def api_index(_: None = Depends(verify_api_key)):
+    from app.catalog_cache import get_index
+
+    idx = get_index()
+    return {
+        "built_at": idx.built_at,
+        "characters_root": str(get_settings().characters_root),
+        "refs_root": str(get_settings().refs_root),
+        "character_count": len(idx.characters),
+        "characters": idx.characters,
+        "reference_counts": {k: len(v) for k, v in idx.references.items()},
+    }
+
+
+@app.post("/v1/index/refresh")
+async def api_index_refresh(_: None = Depends(verify_api_key)):
+    from app.catalog_cache import get_index, invalidate_index
+
+    invalidate_index()
+    idx = get_index(force_rebuild=True)
+    return {
+        "ok": True,
+        "built_at": idx.built_at,
+        "character_count": len(idx.characters),
+    }
+
+
+@app.get("/v1/characters")
+async def api_characters(_: None = Depends(verify_api_key)):
+    return {"characters": list_characters()}
+
+
+@app.get("/v1/characters/{character_id}/references")
+async def api_references(character_id: str, _: None = Depends(verify_api_key)):
+    refs = list_references(character_id)
+    if not refs and not resolve_character(character_id):
+        raise HTTPException(404, "角色不存在")
+    return {"character_id": character_id, "references": refs}
+
+
+@app.post("/v1/tts")
+async def api_tts_post(body: TtsBody, _: None = Depends(verify_api_key)):
+    wav = await _synthesize(body)
+    return Response(
+        content=wav,
+        media_type="audio/wav",
+        headers={"Content-Disposition": 'attachment; filename="tts.wav"'},
+    )
+
+
+@app.get("/v1/tts")
+async def api_tts_get(
+    text: str = Query(...),
+    character_id: str = Query(..., alias="char_name"),
+    ref_audio_path: str | None = None,
+    prompt_text: str | None = None,
+    emotion: str | None = "default",
+    text_lang: str = "zh",
+    _: None = Depends(verify_api_key),
+):
+    body = TtsBody(
+        text=text,
+        character_id=character_id,
+        ref_path=ref_audio_path,
+        prompt_text=prompt_text,
+        emotion=emotion,
+        language=text_lang,
+    )
+    wav = await _synthesize(body)
+    return Response(content=wav, media_type="audio/wav")
+
+
+# 兼容旧中间件路径
+@app.get("/tts_proxy")
+async def tts_proxy_compat(
+    text: str = Query(...),
+    char_name: str = Query(...),
+    ref_audio_path: str = Query(...),
+    prompt_text: str = Query(...),
+    prompt_lang: str = "zh",
+    text_lang: str = "zh",
+    emotion: str | None = "default",
+    _: None = Depends(verify_api_key),
+):
+    body = TtsBody(
+        text=text,
+        character_id=char_name,
+        ref_path=ref_audio_path,
+        prompt_text=prompt_text,
+        emotion=emotion,
+        language=text_lang or prompt_lang,
+    )
+    wav = await _synthesize(body)
+    return Response(content=wav, media_type="audio/wav")
+
+
+if STATIC.is_dir():
+    app.mount("/ui", StaticFiles(directory=str(STATIC), html=True), name="ui")
+
+
+@app.get("/")
+async def root():
+    if (STATIC / "index.html").is_file():
+        return FileResponse(STATIC / "index.html")
+    return {"docs": "/docs", "ui": "/ui/"}
