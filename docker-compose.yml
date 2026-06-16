@@ -19,9 +19,11 @@ services:
       - ${GENIE_CONFIG_DIR:-./data}:/data/config:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
-# Uncomment to join an existing Docker network:
-    # networks:
-    #   - external_net
-# networks:
-#   external_net:
-#     external: true
+    networks:
+      - default
+      - docker_default
+
+networks:
+  default:
+  docker_default:
+    external: true
