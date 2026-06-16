@@ -1,5 +1,5 @@
 [project]
-name = "genie-tts-gateway"
+name = "tts-gateway"
 version = "0.1.0"
 description = "Lightweight Genie TTS relay API + test UI"
 requires-python = ">=3.11"

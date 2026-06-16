@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     tts_timeout_sec: float = 600.0
     host: str = "0.0.0.0"
     port: int = 8080
+    refs_scan_max_depth: int = 2
 
 
 @lru_cache

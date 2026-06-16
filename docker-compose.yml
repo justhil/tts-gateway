@@ -1,8 +1,8 @@
 services:
-  genie-tts-gateway:
+  tts-gateway:
     build: .
-    image: genie-tts-gateway:local
-    container_name: genie-tts-gateway
+    image: tts-gateway:local
+    container_name: tts-gateway
     restart: unless-stopped
     ports:
       - "8088:8080"

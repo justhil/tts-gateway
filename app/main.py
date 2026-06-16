@@ -13,7 +13,7 @@ from app.genie_client import GenieClient, pcm_to_wav
 
 STATIC = Path(__file__).resolve().parent.parent / "static"
 
-app = FastAPI(title="Genie TTS Gateway", version="0.1.0")
+app = FastAPI(title="TTS Gateway", version="0.2.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -57,7 +57,7 @@ def _pick_ref(character_id: str, body: TtsBody) -> tuple[str, str]:
         return path, pt or Path(path).stem
     if body.ref_id:
         for r in refs:
-            if r["id"] == body.ref_id:
+            if r["id"] == body.ref_id or r.get("filename") == body.ref_id:
                 return r["path"], body.prompt_text or r["prompt_text"]
         raise HTTPException(400, "ref_id 无效")
     em = (body.emotion or "default").lower()
@@ -74,8 +74,7 @@ async def _synthesize(body: TtsBody) -> bytes:
     info = resolve_character(body.character_id)
     if not info:
         raise HTTPException(404, f"未找到角色 {body.character_id}")
-    folder = info["folder"]
-    ref_path, prompt_text = _pick_ref(folder, body)
+    ref_path, prompt_text = _pick_ref(body.character_id, body)
     if not os.path.isfile(ref_path):
         raise HTTPException(400, f"参考音频不可读: {ref_path}")
     client = GenieClient(timeout=get_settings().tts_timeout_sec)
@@ -92,12 +91,12 @@ async def _synthesize(body: TtsBody) -> bytes:
 @app.get("/health")
 @app.get("/ping")
 async def health():
-    return {"ok": True, "service": "genie-tts-gateway"}
+    return {"ok": True, "service": "tts-gateway"}
 
 
 @app.get("/v1/index")
 async def api_index(_: None = Depends(verify_api_key)):
-    from app.catalog_cache import get_index
+    from app.index_store import get_index
 
     idx = get_index()
     return {
@@ -112,7 +111,7 @@ async def api_index(_: None = Depends(verify_api_key)):
 
 @app.post("/v1/index/refresh")
 async def api_index_refresh(_: None = Depends(verify_api_key)):
-    from app.catalog_cache import get_index, invalidate_index
+    from app.index_store import get_index, invalidate_index
 
     invalidate_index()
     idx = get_index(force_rebuild=True)

@@ -1,11 +1,13 @@
-# Genie TTS Gateway
+# TTS Gateway
 
 独立 **Genie 中转 API**（无 SillyTavern / 权重切换 / 缓存臃肿逻辑），参考 `SillyTavern-GPT-SoVITS` 的 Genie 桥接方式。
 
 ## 索引规则（无硬编码角色）
 
 - **`CHARACTERS_ROOT`**：子目录内含 `vits_fp32.onnx` → 自动列为角色。
-- **`REFS_ROOT/<文件夹名>/`**：扫描 `*.wav` 等，`.txt` 或 `情绪_文案.wav` 解析 `prompt_text`。
+- **`REFS_ROOT/<文件夹名>/`**：扫描根目录、`emotions/`、`Chinese/emotions/` 下音频。
+- **文案优先级**：同名 `.txt` → 文件名 `情绪_正文` → stem；返回 `prompt_source`（sidecar/filename/stem）。
+- 可选 **`refs_manifest.json`** / `manifest.json`（`emotions` 块或 file→text）。
 - **`data/genie_character_models.json`**（可选）：仅**覆盖** `genie_character`、`onnx_model_dir`、`language`；默认可 `{}`。
 - **`data/character_mappings.json`**（可选）：对外别名 → 文件夹名，如酒馆名；默认可 `{}`。
 - 目录或 JSON 变更后：自动按 mtime 重建缓存，或 `POST /v1/index/refresh`。
@@ -31,7 +33,7 @@
 ## 本地运行
 
 ```bash
-cd genie-tts-gateway
+cd tts-gateway
 pip install -e .
 export GENIE_HOST=http://127.0.0.1:8429
 export CHARACTERS_ROOT=/www/genie/characters
@@ -49,7 +51,7 @@ docker compose build
 docker compose up -d
 ```
 
-默认映射 **8088→8080**，与 `tts-manager` 并存；Tunnel 可改指 `genie-tts-gateway:8080`。
+默认映射 **8088→8080**，与 `tts-manager` 并存；Tunnel 可改指 `tts-gateway:8080`。
 
 ## 示例
 

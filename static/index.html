@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Genie TTS 测试</title>
+  <title>TTS Gateway 测试</title>
   <style>
     :root { --bg:#0f1419; --card:#1a2332; --text:#e7ecf3; --muted:#8b9cb3; --accent:#3d8bfd; }
     * { box-sizing: border-box; }
@@ -22,7 +22,7 @@
   </style>
 </head>
 <body>
-  <h1>Genie TTS Gateway · 试听 / 下载</h1>
+  <h1>TTS Gateway · 试听 / 下载</h1>
   <label>角色</label>
   <select id="char"></select>
   <label>参考音（情绪）</label>
@@ -66,7 +66,7 @@
         o.dataset.path = r.path;
         o.dataset.prompt = r.prompt_text;
         o.dataset.emotion = r.emotion;
-        o.textContent = r.emotion + ' · ' + r.id;
+        o.textContent = (r.emotion || '') + ' · ' + (r.filename || r.id);
         sel.appendChild(o);
       });
       updateMeta();
