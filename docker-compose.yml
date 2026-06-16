@@ -19,11 +19,9 @@ services:
       - ${GENIE_CONFIG_DIR:-./data}:/data/config:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    networks:
-      - default
-      - docker_default
-
-networks:
-  default:
-  docker_default:
-    external: true
+# Optional: join existing Docker network for Cloudflare tunnel (see deploy/CLOUDFLARE-TUNNEL.md)
+    # networks:
+    #   - docker_default
+# networks:
+#   docker_default:
+#     external: true
