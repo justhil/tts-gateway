@@ -98,24 +98,32 @@ async def _synthesize(body: TtsBody) -> bytes:
     onnx_dir = path_for_genie(info["onnx_model_dir"])
     ref_for_genie = path_for_genie(ref_path)
     gname = info["genie_character"]
-    try:
-        pcm = await _run_genie_tts(
-            client, gname, onnx_dir, info["language"], ref_for_genie, prompt_text, body
+    from app.genie_chunk_tts import synthesize_pcm_chunked
+
+    async def _do_synth(force: bool = False) -> bytes:
+        if force:
+            await client.ensure_character(
+                gname, onnx_dir, info["language"], force=True
+            )
+            await client.set_reference(
+                gname, ref_for_genie, prompt_text, body.language
+            )
+        else:
+            await client.ensure_character(gname, onnx_dir, info["language"])
+            await client.set_reference(
+                gname, ref_for_genie, prompt_text, body.language
+            )
+        return await synthesize_pcm_chunked(
+            client, gname, body.text, split_sentence=body.split_sentence
         )
+
+    try:
+        wav = await _do_synth()
     except httpx.HTTPStatusError as e:
         if e.response.status_code == 404:
             clear_genie_session(gname)
             try:
-                pcm = await _run_genie_tts(
-                    client,
-                    gname,
-                    onnx_dir,
-                    info["language"],
-                    ref_for_genie,
-                    prompt_text,
-                    body,
-                    force_load=True,
-                )
+                wav = await _do_synth(force=True)
             except httpx.HTTPStatusError as e2:
                 raise HTTPException(
                     502,
@@ -132,12 +140,6 @@ async def _synthesize(body: TtsBody) -> bytes:
         ) from e
     except RuntimeError as e:
         raise HTTPException(502, str(e)) from e
-    wav = pcm_to_wav(pcm)
-    if len(wav) < 1024:
-        raise HTTPException(
-            502,
-            "合成结果为空或过短（Genie 可能 OOM 或长文本未产出音频，可缩短文本或开启 split_sentence）",
-        )
     return wav
 
 
