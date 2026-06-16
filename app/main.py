@@ -39,7 +39,7 @@ class TtsBody(BaseModel):
     emotion: str | None = Field(None, description="按情绪选 ref")
     prompt_text: str | None = None
     language: str = "zh"
-    split_sentence: bool = True
+    split_sentence: bool = False
 
 
 def _pick_ref(character_id: str, body: TtsBody) -> tuple[str, str]:
