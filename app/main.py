@@ -32,7 +32,7 @@ def verify_api_key(request: Request, settings: Settings = Depends(get_settings))
 
 class TtsBody(BaseModel):
     text: str = Field(..., min_length=1, max_length=2000)
-    character_id: str = Field(..., description="角色 ID，如 墨白")
+    character_id: str = Field(..., description="角色 ID（与 characters 目录下文件夹名或 mappings 别名一致）")
     ref_path: str | None = Field(None, description="参考 wav 绝对路径")
     ref_id: str | None = Field(None, description="refs 目录下文件名")
     emotion: str | None = Field(None, description="按情绪选 ref")

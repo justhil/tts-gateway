@@ -5,21 +5,23 @@ services:
     container_name: tts-gateway
     restart: unless-stopped
     ports:
-      - "8088:8080"
+      - "${PORT:-8088}:8080"
     environment:
-      GENIE_HOST: ${GENIE_HOST:-http://172.17.0.1:8429}
-      CHARACTERS_ROOT: /www/genie/characters
-      REFS_ROOT: /www/genie/refs
-      DATA_DIR: /data
+      GENIE_HOST: ${GENIE_HOST:-http://host.docker.internal:8429}
+      CHARACTERS_ROOT: /data/characters
+      REFS_ROOT: /data/refs
+      DATA_DIR: /data/config
       API_KEY: ${API_KEY:-}
+      REFS_SCAN_MAX_DEPTH: ${REFS_SCAN_MAX_DEPTH:-2}
     volumes:
-      - ${GENIE_ROOT:-/www/genie}/characters:/www/genie/characters:ro
-      - ${GENIE_ROOT:-/www/genie}/refs:/www/genie/refs:ro
-      - ./data:/data:ro
-    networks:
-      - default
-
-networks:
-  default:
-    name: docker_default
-    external: true
+      - ${GENIE_CHARACTERS_DIR:-./volumes/characters}:/data/characters:ro
+      - ${GENIE_REFS_DIR:-./volumes/refs}:/data/refs:ro
+      - ${GENIE_CONFIG_DIR:-./data}:/data/config:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+# Uncomment to join an existing Docker network:
+    # networks:
+    #   - external_net
+# networks:
+#   external_net:
+#     external: true

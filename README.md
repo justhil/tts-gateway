@@ -1,67 +1,65 @@
 # TTS Gateway
 
-独立 **Genie 中转 API**（无 SillyTavern / 权重切换 / 缓存臃肿逻辑），参考 `SillyTavern-GPT-SoVITS` 的 Genie 桥接方式。
+轻量 **Genie TTS 中转**：目录扫描角色与参考音，标准 HTTP 合成 WAV + 简易测试页。
 
 ## 索引规则（无硬编码角色）
 
-- **`CHARACTERS_ROOT`**：子目录内含 `vits_fp32.onnx` → 自动列为角色。
-- **`REFS_ROOT/<文件夹名>/`**：扫描根目录、`emotions/`、`Chinese/emotions/` 下音频。
-- **文案优先级**：同名 `.txt` → 文件名 `情绪_正文` → stem；返回 `prompt_source`（sidecar/filename/stem）。
-- 可选 **`refs_manifest.json`** / `manifest.json`（`emotions` 块或 file→text）。
-- **`data/genie_character_models.json`**（可选）：仅**覆盖** `genie_character`、`onnx_model_dir`、`language`；默认可 `{}`。
-- **`data/character_mappings.json`**（可选）：对外别名 → 文件夹名，如酒馆名；默认可 `{}`。
-- 目录或 JSON 变更后：自动按 mtime 重建缓存，或 `POST /v1/index/refresh`。
+- **`CHARACTERS_ROOT`**：子目录含 `vits_fp32.onnx` → 自动列为角色。
+- **`REFS_ROOT/<文件夹名>/`**：根目录、`emotions/`、`Chinese/emotions/` 等子目录下的音频。
+- **文案**：同名 `.txt` → 文件名 `标签_正文` → stem；响应含 `prompt_source`。
+- **`DATA_DIR/genie_character_models.json`**（可选 `{}`）：覆盖 `genie_character` / `onnx_model_dir`。
+- **`DATA_DIR/character_mappings.json`**（可选 `{}`）：对外 ID → 文件夹名。
+- 变更后：`POST /v1/index/refresh` 或依赖 mtime 自动重建。
 
-## 功能
+详细 curl 见 **[docs/EXAMPLES.md](docs/EXAMPLES.md)**（仅用占位符）。
 
-| 接口 | 说明 |
+## API
+
+| 方法 | 路径 |
 |------|------|
-| `GET /ping` | 健康检查 |
-| `GET /v1/index` | 当前扫描结果摘要 |
-| `POST /v1/index/refresh` | 强制重扫目录 |
-| `GET /v1/characters` | 角色列表（目录扫描） |
-| `GET /v1/characters/{id}/references` | 参考 wav + `prompt_text` + `emotion` |
-| `POST /v1/tts` | JSON 合成，响应 **WAV** |
-| `GET /v1/tts` | 查询参数合成（`char_name` 兼容） |
-| `GET /tts_proxy` | 与旧中间件参数兼容 |
-| `/` 或 `/ui/` | 浏览器测试页（试听 + 下载） |
+| GET | `/ping` |
+| GET | `/v1/index` |
+| POST | `/v1/index/refresh` |
+| GET | `/v1/characters` |
+| GET | `/v1/characters/{id}/references` |
+| POST | `/v1/tts` → `audio/wav` |
+| GET | `/v1/tts` / `/tts_proxy` |
+| GET | `/ui/` 测试页 |
 
 ## 环境变量
 
-见 `.env.example`：`GENIE_HOST`、`CHARACTERS_ROOT`、`REFS_ROOT`、`DATA_DIR`、`API_KEY`。
+复制 `.env.example` → `.env`（**勿提交 `.env`**）：
+
+| 变量 | 说明 |
+|------|------|
+| `GENIE_HOST` | Genie API 根地址 |
+| `CHARACTERS_ROOT` | ONNX 角色根目录 |
+| `REFS_ROOT` | 参考音根目录 |
+| `DATA_DIR` | 可选 JSON 配置目录 |
+| `API_KEY` | 非空则要求 `X-API-Key` |
+| `REFS_SCAN_MAX_DEPTH` | 预留深度扫描参数 |
 
 ## 本地运行
 
 ```bash
-cd tts-gateway
-pip install -e .
-export GENIE_HOST=http://127.0.0.1:8429
-export CHARACTERS_ROOT=/www/genie/characters
-export REFS_ROOT=/www/genie/refs
-export DATA_DIR=./data
+pip install -r requirements.txt
+cp .env.example .env
+# 编辑 .env 指向本机目录与 Genie 地址
 uvicorn app.main:app --host 0.0.0.0 --port 8088
 ```
 
-打开 http://127.0.0.1:8088/ui/
+浏览器打开 `/ui/`。
 
-## Docker（VPS）
-
-```bash
-docker compose build
-docker compose up -d
-```
-
-默认映射 **8088→8080**，与 `tts-manager` 并存；Tunnel 可改指 `tts-gateway:8080`。
-
-## 示例
+## Docker
 
 ```bash
-curl -s http://127.0.0.1:8088/v1/characters | jq .
-curl -s "http://127.0.0.1:8088/v1/characters/<文件夹名>/references" | jq .
-curl -X POST http://127.0.0.1:8088/v1/tts -H "Content-Type: application/json" \
-  -d '{"text":"测试","character_id":"<文件夹名>","emotion":"default"}' -o out.wav
+mkdir -p volumes/characters volumes/refs
+# 将 ONNX 与 refs 放到 volumes 下，或改 compose 里的 GENIE_*_DIR
+docker compose build && docker compose up -d
 ```
 
-## 镜像体积
+Compose 通过 **`GENIE_CHARACTERS_DIR` / `GENIE_REFS_DIR` / `GENIE_CONFIG_DIR`** 挂载宿主机路径，默认值见 `docker-compose.yml`。
 
-基于 `python:3.12-slim`，仅 FastAPI + httpx，无 torch/ffmpeg。
+## 镜像
+
+`python:3.12-slim` + FastAPI + httpx，无 torch/ffmpeg。
