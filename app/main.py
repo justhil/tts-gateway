@@ -1,6 +1,7 @@
 import os
 from pathlib import Path
 
+import httpx
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response
@@ -9,7 +10,7 @@ from pydantic import BaseModel, Field
 
 from app.catalog import list_characters, list_references, resolve_character
 from app.config import Settings, get_settings, path_for_genie
-from app.genie_client import GenieClient, pcm_to_wav
+from app.genie_client import GenieClient, clear_genie_session, pcm_to_wav
 
 STATIC = Path(__file__).resolve().parent.parent / "static"
 
@@ -70,6 +71,22 @@ def _pick_ref(character_id: str, body: TtsBody) -> tuple[str, str]:
     return refs[0]["path"], body.prompt_text or refs[0]["prompt_text"]
 
 
+async def _run_genie_tts(
+    client: GenieClient,
+    genie_name: str,
+    onnx_dir: str,
+    language: str,
+    ref_for_genie: str,
+    prompt_text: str,
+    body: TtsBody,
+    *,
+    force_load: bool = False,
+) -> bytes:
+    await client.ensure_character(genie_name, onnx_dir, language, force=force_load)
+    await client.set_reference(genie_name, ref_for_genie, prompt_text, body.language)
+    return await client.tts_pcm(genie_name, body.text, body.split_sentence)
+
+
 async def _synthesize(body: TtsBody) -> bytes:
     info = resolve_character(body.character_id)
     if not info:
@@ -80,13 +97,41 @@ async def _synthesize(body: TtsBody) -> bytes:
     client = GenieClient(timeout=get_settings().tts_timeout_sec)
     onnx_dir = path_for_genie(info["onnx_model_dir"])
     ref_for_genie = path_for_genie(ref_path)
-    await client.ensure_character(
-        info["genie_character"], onnx_dir, info["language"]
-    )
-    await client.set_reference(
-        info["genie_character"], ref_for_genie, prompt_text, body.language
-    )
-    pcm = await client.tts_pcm(info["genie_character"], body.text, body.split_sentence)
+    gname = info["genie_character"]
+    try:
+        pcm = await _run_genie_tts(
+            client, gname, onnx_dir, info["language"], ref_for_genie, prompt_text, body
+        )
+    except httpx.HTTPStatusError as e:
+        if e.response.status_code == 404:
+            clear_genie_session(gname)
+            try:
+                pcm = await _run_genie_tts(
+                    client,
+                    gname,
+                    onnx_dir,
+                    info["language"],
+                    ref_for_genie,
+                    prompt_text,
+                    body,
+                    force_load=True,
+                )
+            except httpx.HTTPStatusError as e2:
+                raise HTTPException(
+                    502,
+                    f"Genie 错误 {e2.response.status_code}: {e2.response.text[:300]}",
+                ) from e2
+        else:
+            raise HTTPException(
+                502, f"Genie 错误 {e.response.status_code}: {e.response.text[:300]}"
+            ) from e
+    except httpx.ReadTimeout as e:
+        raise HTTPException(
+            504,
+            "Genie 合成超时（可能内存不足被 OOM，请释放 Hermes/其他服务后重试）",
+        ) from e
+    except RuntimeError as e:
+        raise HTTPException(502, str(e)) from e
     return pcm_to_wav(pcm)
 
 

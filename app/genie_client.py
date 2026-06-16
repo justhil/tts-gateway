@@ -21,6 +21,15 @@ def pcm_to_wav(pcm: bytes) -> bytes:
     return buf.getvalue()
 
 
+def clear_genie_session(genie_name: str | None = None) -> None:
+    if genie_name:
+        _loaded.discard(genie_name)
+        _ref_state.pop(genie_name, None)
+    else:
+        _loaded.clear()
+        _ref_state.clear()
+
+
 class GenieClient:
     def __init__(self, base_url: Optional[str] = None, timeout: float = 600.0):
         self.base = (base_url or get_settings().genie_host).rstrip("/")
@@ -30,8 +39,10 @@ class GenieClient:
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             return await client.post(f"{self.base}{path}", json=body)
 
-    async def ensure_character(self, genie_name: str, onnx_dir: str, language: str) -> None:
-        if genie_name in _loaded:
+    async def ensure_character(
+        self, genie_name: str, onnx_dir: str, language: str, *, force: bool = False
+    ) -> None:
+        if not force and genie_name in _loaded:
             return
         r = await self._post(
             "/load_character",
@@ -42,6 +53,10 @@ class GenieClient:
             },
         )
         r.raise_for_status()
+        text = (r.text or "").lower()
+        if "failed" in text or "不存在" in text or "error" in text[:200]:
+            clear_genie_session(genie_name)
+            raise RuntimeError(f"Genie load_character 失败: {r.text[:400]}")
         _loaded.add(genie_name)
 
     async def set_reference(
@@ -71,5 +86,9 @@ class GenieClient:
                 "split_sentence": split_sentence,
             },
         )
+        if r.status_code == 404:
+            clear_genie_session(genie_name)
         r.raise_for_status()
+        if len(r.content) < 256:
+            raise RuntimeError(f"Genie /tts 响应过短 ({len(r.content)} bytes): {r.text[:200]}")
         return r.content
