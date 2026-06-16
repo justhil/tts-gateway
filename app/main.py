@@ -8,7 +8,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from app.catalog import list_characters, list_references, resolve_character
-from app.config import Settings, get_settings
+from app.config import Settings, get_settings, path_for_genie
 from app.genie_client import GenieClient, pcm_to_wav
 
 STATIC = Path(__file__).resolve().parent.parent / "static"
@@ -78,11 +78,13 @@ async def _synthesize(body: TtsBody) -> bytes:
     if not os.path.isfile(ref_path):
         raise HTTPException(400, f"参考音频不可读: {ref_path}")
     client = GenieClient(timeout=get_settings().tts_timeout_sec)
+    onnx_dir = path_for_genie(info["onnx_model_dir"])
+    ref_for_genie = path_for_genie(ref_path)
     await client.ensure_character(
-        info["genie_character"], info["onnx_model_dir"], info["language"]
+        info["genie_character"], onnx_dir, info["language"]
     )
     await client.set_reference(
-        info["genie_character"], ref_path, prompt_text, body.language
+        info["genie_character"], ref_for_genie, prompt_text, body.language
     )
     pcm = await client.tts_pcm(info["genie_character"], body.text, body.split_sentence)
     return pcm_to_wav(pcm)

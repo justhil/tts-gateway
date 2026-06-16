@@ -18,8 +18,22 @@ class Settings(BaseSettings):
     host: str = "0.0.0.0"
     port: int = 8080
     refs_scan_max_depth: int = 2
+    # Genie 跑在宿主机、网关跑在容器时：把扫描到的路径前缀换成 Genie 可见路径
+    genie_path_prefix: str = ""
+    genie_path_replace: str = ""
 
 
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
+
+
+def path_for_genie(host_path: str) -> str:
+    """容器内绝对路径 -> Genie 进程（宿主机）上的路径。"""
+    s = get_settings()
+    p, r = s.genie_path_prefix.strip(), s.genie_path_replace.strip()
+    if not p or not r:
+        return host_path
+    if host_path.startswith(p):
+        return r + host_path[len(p) :]
+    return host_path
