@@ -2,139 +2,141 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>TTS Gateway 测试</title>
-  <style>
-    :root { --bg:#0f1419; --card:#1a2332; --text:#e7ecf3; --muted:#8b9cb3; --accent:#3d8bfd; }
-    * { box-sizing: border-box; }
-    body { font-family: system-ui, sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 1.5rem; max-width: 720px; }
-    h1 { font-size: 1.25rem; font-weight: 600; }
-    label { display: block; font-size: 0.8rem; color: var(--muted); margin: 0.75rem 0 0.25rem; }
-    select, textarea, input { width: 100%; padding: 0.5rem; border-radius: 8px; border: 1px solid #2a3548; background: #121a24; color: var(--text); }
-    textarea { min-height: 88px; resize: vertical; }
-    .row { display: flex; gap: 0.75rem; flex-wrap: wrap; margin-top: 1rem; }
-    button { padding: 0.55rem 1.1rem; border-radius: 8px; border: none; background: var(--accent); color: #fff; cursor: pointer; font-weight: 500; }
-    button:disabled { opacity: 0.5; cursor: wait; }
-    button.secondary { background: #2a3548; }
-    #status { font-size: 0.85rem; color: var(--muted); margin-top: 0.75rem; min-height: 1.2em; }
-    audio { width: 100%; margin-top: 1rem; }
-    .meta { font-size: 0.75rem; color: var(--muted); margin-top: 0.25rem; word-break: break-all; }
-  </style>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0a0d12" id="metaThemeColor" />
+  <title>TTS Gateway</title>
+  <script>
+    (function () {
+      try {
+        var k = "tts_gateway_theme";
+        var t = localStorage.getItem(k);
+        if (t !== "light" && t !== "dark") t = "dark";
+        document.documentElement.setAttribute("data-theme", t);
+        var m = document.getElementById("metaThemeColor");
+        if (m) m.setAttribute("content", t === "light" ? "#f4f6fa" : "#0a0d12");
+      } catch (e) {
+        document.documentElement.setAttribute("data-theme", "dark");
+      }
+    })();
+  </script>
+  <link rel="stylesheet" href="/ui/app.css" />
 </head>
 <body>
-  <h1>TTS Gateway · 试听 / 下载</h1>
-  <label>角色</label>
-  <select id="char"></select>
-  <label>参考音（情绪）</label>
-  <select id="ref"></select>
-  <p class="meta" id="refMeta"></p>
-  <label>台词</label>
-  <textarea id="text" placeholder="输入要合成的文本…">你好，这是测试一句。</textarea>
-  <div class="row">
-    <button id="go">合成 WAV</button>
-    <button class="secondary" id="dl" disabled>下载</button>
-    <button class="secondary" id="refresh" type="button">刷新目录索引</button>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-dot" aria-hidden="true"></span>
+      <span>TTS Gateway</span>
+    </div>
+    <div class="topbar-actions">
+      <span class="pill" id="indexPill" title="索引">加载中…</span>
+      <button type="button" class="btn btn-ghost theme-toggle" id="themeToggle" aria-label="切换浅色/深色主题" title="切换主题">
+        <span class="icon-sun" aria-hidden="true">☀</span>
+        <span class="icon-moon" aria-hidden="true">☾</span>
+      </button>
+      <button type="button" class="btn btn-ghost" id="openKey" aria-label="API 密钥设置">密钥</button>
+    </div>
+  </header>
+
+  <main class="app">
+    <div class="grid grid-main">
+      <section class="card span-full">
+        <h2 class="card-title">台词</h2>
+        <div class="field">
+          <label for="text">要合成的文本</label>
+          <textarea id="text" maxlength="2000" placeholder="输入台词…" aria-describedby="charCount">你好，欢迎使用 TTS Gateway。</textarea>
+          <div class="char-count" id="charCount">0 / 2000</div>
+        </div>
+        <div class="btn-row">
+          <button type="button" class="btn btn-primary" id="go">
+            <span id="goSpinner" class="spinner" hidden aria-hidden="true"></span>
+            合成 WAV
+          </button>
+          <button type="button" class="btn btn-ghost" id="dl" disabled>下载</button>
+          <button type="button" class="btn btn-ghost" id="copyLink">复制试听链接</button>
+          <span class="status-line" style="margin:0;align-self:center"><kbd>Ctrl</kbd>+<kbd>Enter</kbd> 合成</span>
+        </div>
+        <p class="status-line" id="status" role="status"></p>
+        <div class="player-wrap" id="playerWrap">
+          <audio id="player" controls preload="metadata" aria-label="合成结果播放"></audio>
+          <div class="toggle-row" style="margin-top:0.75rem">
+            <span>合成后自动播放</span>
+            <label class="toggle">
+              <input type="checkbox" id="autoPlay" checked />
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2 class="card-title">角色与参考</h2>
+        <div class="field">
+          <label for="charFilter">筛选角色</label>
+          <input type="search" id="charFilter" placeholder="按 ID 或 genie 名过滤…" autocomplete="off" />
+        </div>
+        <div class="field">
+          <label for="char">角色</label>
+          <select id="char" aria-label="选择角色"></select>
+        </div>
+        <div class="field">
+          <label for="ref">参考音</label>
+          <select id="ref" aria-label="选择参考音频"></select>
+          <div class="meta-box" id="refMeta" aria-live="polite"></div>
+        </div>
+        <div class="toggle-row">
+          <span>仅按情绪匹配（不传 ref_id）</span>
+          <label class="toggle">
+            <input type="checkbox" id="useEmotionOnly" />
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        <div class="field" style="margin-top:0.65rem">
+          <label for="emotionOverride">情绪覆盖（仅上一项开启时）</label>
+          <input type="text" id="emotionOverride" value="default" disabled placeholder="default / happy / …" />
+        </div>
+        <button type="button" class="btn btn-ghost" id="refresh" style="width:100%;margin-top:0.5rem">刷新目录索引</button>
+      </section>
+
+      <section class="card">
+        <h2 class="card-title">合成选项</h2>
+        <div class="field">
+          <label for="language">语言 text_lang</label>
+          <select id="language" aria-label="合成语言"></select>
+        </div>
+        <div class="field">
+          <label for="promptOverride">prompt 覆盖（可选）</label>
+          <input type="text" id="promptOverride" placeholder="留空则用参考音自带 prompt" autocomplete="off" />
+        </div>
+        <div class="toggle-row">
+          <span>按句切分 split_sentence</span>
+          <label class="toggle">
+            <input type="checkbox" id="splitSentence" checked />
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        <h2 class="card-title" style="margin-top:1.25rem">最近台词</h2>
+        <ul class="history" id="history" aria-label="合成历史摘要"></ul>
+      </section>
+    </div>
+  </main>
+
+  <div class="toast-host" id="toastHost" aria-live="polite"></div>
+
+  <div class="overlay" id="keyOverlay" role="dialog" aria-labelledby="keyTitle" aria-modal="true">
+    <div class="modal">
+      <h2 id="keyTitle">API 密钥</h2>
+      <p style="font-size:0.85rem;color:var(--muted);margin:0 0 1rem">
+        若服务端设置了 <code>API_KEY</code>，请填写相同值。仅保存在本浏览器 localStorage，不会上传。
+      </p>
+      <label for="apiKeyInput">X-API-Key</label>
+      <input type="password" id="apiKeyInput" autocomplete="off" placeholder="留空表示不发送" />
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" id="closeKey">取消</button>
+        <button type="button" class="btn btn-primary" id="saveKey">保存</button>
+      </div>
+    </div>
   </div>
-  <div id="status"></div>
-  <audio id="player" controls></audio>
-  <script>
-    const $ = (id) => document.getElementById(id);
-    let lastBlob = null;
-    const api = (path) => fetch(path).then(r => { if (!r.ok) throw new Error(r.status); return r.json(); });
 
-    async function loadChars() {
-      const data = await api('/v1/characters');
-      const sel = $('char');
-      sel.innerHTML = '';
-      (data.characters || []).forEach(c => {
-        const o = document.createElement('option');
-        o.value = c.id;
-        o.textContent = c.id + ' → ' + c.genie_character;
-        sel.appendChild(o);
-      });
-      if (sel.options.length) await loadRefs();
-    }
-
-    async function loadRefs() {
-      const id = $('char').value;
-      const data = await api('/v1/characters/' + encodeURIComponent(id) + '/references');
-      const sel = $('ref');
-      sel.innerHTML = '';
-      (data.references || []).forEach(r => {
-        const o = document.createElement('option');
-        o.value = r.id;
-        o.dataset.path = r.path;
-        o.dataset.prompt = r.prompt_text;
-        o.dataset.emotion = r.emotion;
-        o.textContent = (r.emotion || '') + ' · ' + (r.filename || r.id);
-        sel.appendChild(o);
-      });
-      updateMeta();
-    }
-
-    function updateMeta() {
-      const o = $('ref').selectedOptions[0];
-      if (!o) { $('refMeta').textContent = ''; return; }
-      $('refMeta').textContent = 'prompt: ' + (o.dataset.prompt || '') + '\n' + (o.dataset.path || '');
-    }
-
-    $('char').onchange = loadRefs;
-    $('ref').onchange = updateMeta;
-
-    $('go').onclick = async () => {
-      const btn = $('go');
-      btn.disabled = true;
-      $('status').textContent = '合成中…';
-      $('dl').disabled = true;
-      lastBlob = null;
-      $('player').removeAttribute('src');
-      try {
-        const body = {
-          text: $('text').value.trim(),
-          character_id: $('char').value,
-          ref_id: $('ref').value,
-          language: 'zh',
-        };
-        const t0 = performance.now();
-        const res = await fetch('/v1/tts', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body),
-        });
-        if (!res.ok) {
-          const err = await res.text();
-          throw new Error(res.status + ' ' + err.slice(0, 200));
-        }
-        lastBlob = await res.blob();
-        const url = URL.createObjectURL(lastBlob);
-        $('player').src = url;
-        $('dl').disabled = false;
-        $('status').textContent = '完成 ' + ((performance.now() - t0) / 1000).toFixed(1) + 's · ' + (lastBlob.size / 1024).toFixed(0) + ' KB';
-      } catch (e) {
-        $('status').textContent = '失败: ' + e.message;
-      } finally {
-        btn.disabled = false;
-      }
-    };
-
-    $('dl').onclick = () => {
-      if (!lastBlob) return;
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(lastBlob);
-      a.download = 'tts_' + $('char').value + '.wav';
-      a.click();
-    };
-
-    $('refresh').onclick = async () => {
-      $('status').textContent = '正在扫描目录…';
-      try {
-        await fetch('/v1/index/refresh', { method: 'POST' });
-        await loadChars();
-        $('status').textContent = '索引已更新';
-      } catch (e) { $('status').textContent = '刷新失败: ' + e.message; }
-    };
-
-    loadChars().catch(e => $('status').textContent = '加载角色失败: ' + e.message);
-  </script>
+  <script src="/ui/app.js" defer></script>
 </body>
 </html>
